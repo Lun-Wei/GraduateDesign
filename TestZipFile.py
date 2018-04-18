@@ -4,6 +4,7 @@ from lxml import etree
 
 PREFIX = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 file_path = "10061167_刘牛顿_论文终稿.docx"
+tempt_filename = "rules"
 z = zipfile.ZipFile(file_path,"r")
 doc = z.read("word/document.xml")
 doct = etree.XML(doc)
@@ -13,6 +14,21 @@ z.close()
 body = doct.find(PREFIX + "body")
 wT = open("wText.txt","w")
 lT = open("pCat.txt","w")
+tempt = {}
+tf = open(tempt_filename,"r")
+for line in tf:
+    if line.startswith('{'):
+        group=line[1:-3].split(',')
+        for factor in group:
+            _key = factor[:factor.index(':')]
+            _val = factor[factor.index(':')+1:]
+            if _key == 'key':
+                rule_dkey = _val
+                tempt.setdefault(_val,{})
+            if _key!= 'key':
+                tempt[rule_dkey].setdefault(_key,_val)
+tf.close()
+print(tempt)
 
 def check_element_type(element,type):
     return element.tag == "%s%s"%(PREFIX,type)
@@ -255,13 +271,144 @@ def locate():
     if not "refer" in bigCat.values():
         print("Warning:refer lost")
 
+def assign_fd(pPr,d):
+    for node in pPr.iter(tag = etree.Element):
+        if check_element_type(node,"rFonts"):
+            att = node.get(PREFIX+"eastAsia")
+            if att != None:
+                d["fontCN"] = att
+            att = node.get(PREFIX+"ascii")
+            if att != None:
+                d["fontEN"] = att
+        elif check_element_type(node,"sz"):
+            d["fontSize"] = node.get(PREFIX+"val")
+        elif check_element_type(node,"b"):
+            if "%s%s" % (PREFIX,"val") in node.keys():
+                if node.get(PREFIX+'val') != '0' and node.get(PREFIX+ 'val') != 'false':
+                    d["fontShape"] = '1'
+                else:
+                    d["fontShape"] = '0'
+            else:
+                d["fontShape"] = "1"
+        elif check_element_type(node,"jc"):
+            d["paraAlign"] = node.get(PREFIX+"val")
+        elif check_element_type(node,"spacing"):
+            if "%s%s" % (PREFIX,"line") in node.keys():
+                d["paraSpace"] = node.get(PREFIX+"line")
+            elif "%s%s" % (PREFIX,"before") in node.keys():
+                d["paraFrontSpace"] = node.get(PREFIX + "before")
+            elif "%s%s" % (PREFIX, "after") in node.keys():
+                d["paraAfterSpace"] = node.get(PREFIX+"after")
+        elif check_element_type(node,'ind'):#判断firstLine 和 firstLineChars的优先级
+            if "%s%s"%(PREFIX,"firstLine") in node.keys():
+                d['paraIsIntent']=node.get(PREFIX+'firstLine')
+            if "%s%s"%(PREFIX,"firstLineChars") in node.keys():
+                d['paraIsIntent']= node.get(PREFIX+'firstLineChars')
+        elif check_element_type(node,'outlineLvl'):
+            d['paraGrade'] = node.get(PREFIX+'val')
+
+def get_default(d):
+    for style in styt.iter(tag = PREFIX+"style"):
+        if style.get(PREFIX+"default") == "1" and style.get(PREFIX+"type") == "paragraph":
+            assign_fd(style,d)
+
+def get_styleIdF(styleId,d):
+    for style in styt.iter(tag=PREFIX+"style"):
+        if style.get(PREFIX+"styleId") == styleId:
+            for node in style.iter(tag=etree.Element):
+                if check_element_type(node,"baseOn"):
+                    id = node.get(PREFIX+"val")
+                    get_styleIdF(id,d)
+                if check_element_type(node,"pPr"):
+                    assign_fd(node,d)
+
+def get_format(p,d):
+    get_default(d)
+    pPr = p.find(PREFIX+"pPr")
+    if pPr != None:
+        pStyle = p.find(PREFIX+"pStyle")
+        if pStyle != None:
+            styleId = pStyle.get(PREFIX+"val")
+            get_styleIdF(styleId,d)
+        assign_fd(pPr,d)
+    return
+
+def check_out(sC,cur_format,pIndex,p):
+    position = ['fontCN', 'fontEN', 'fontSize', 'fontShape', 'paraGrade', 'paraAlign', 'paraSpace', 'paraFrontSpace',
+                'paraAfterSpace', 'paraIsIntent']
+    # 这个字典的定义是为了避免对每个para都把规则字典里十个字段检查一遍，根据para的位置有选择有针对性的检查
+    checkItemDct = {'cover1': ['fontCN', 'fontEN', 'fontSize', 'fontShape'],
+                    'cover2': ['fontCN', 'fontSize', 'paraAlign', 'paraIsIntent'],
+                    'cover3': ['fontCN', 'fontSize', 'paraAlign', 'paraIsIntent'],
+                    'cover4': ['fontCN', 'fontSize', 'fontShape'],
+                    'cover5': ['fontCN', 'fontSize', 'fontShape', 'paraAlign', 'paraIsIntent'],
+                    'cover6': ['fontCN', 'fontSize', 'fontShape', 'paraAlign'],
+                    'statm1': position,
+                    'statm2': position,
+                    'statm3': position,
+                    'abstr1': position,
+                    'abstr2': position,
+                    'abstr3': position,
+                    'abstr4': position,
+                    'abstr5': position,
+                    'abstr6': position,
+                    'menuTitle': position,
+                    'menuFirst': ['fontCN', 'fontSize', 'fontShape'],
+                    'menuSecond': ['fontCN', 'fontSize', 'fontShape'],
+                    'menuThird': ['fontCN', 'fontSize', 'fontShape'],
+                    'firstTitle': position,
+                    'secondTitle': position,
+                    'thirdTitle': position,
+                    'body': position,
+                    'tableText': position,
+                    'thankTitle': position,
+                    'thankContent': position,
+                    'extentTitle': position,
+                    'extentContent': position,
+                    'objectTitle': ['fontCN', 'fontEN', 'fontSize', 'fontShape', 'paraGrade', 'paraAlign',
+                                    'paraIsIntent'],
+                    'tableTitle': ['fontCN', 'fontEN', 'fontSize', 'fontShape', 'paraGrade', 'paraAlign',
+                                   'paraIsIntent'],
+                    'reference': position}
+    if sC in checkItemDct.keys():
+        if sC == "abstr5":
+            return
+    return
+
 pIndex = 0
 bigCat = {}
 sCat = {}
+p_format = {}.fromkeys(["fontCN","fontEN","fontSize","fontShape","paraAlign","paraSpace","paraIsIntent","paraFrontSpace","paraAfterSpace","paraGrade","leftChars","left"])
+get_default(p_format)
+print(p_format)
+#print(doct.find("b"))
+"""'fontCN':'中文字体',
+'fontEN':'英文字体',
+'fontSize':'字号',
+'fontShape':'加粗',
+'paraAlign':'对齐方式',
+'paraSpace':'行间距',
+'paraIsIntent':'首行缩进'
+'paraFrontSpace':'段前间距',
+'paraAfterSpace':'段后间距',
+'paraGrade':"文本级别",
+}"""
 locate()
+
+for p in body.iter(tag=PREFIX+"p"):
+    pIndex += 1
+    text = get_ptext(p)
+    if text == " " or text=="":
+        continue
+    for k in p_format.keys():
+        p_format[k] = None
+    get_format(p,p_format)
+    #print(pIndex,p_format)
+
 for i in sCat.keys():
     lT.write(str(i)+" "+sCat[i]+"\n")
 lT.close()
 wT.close()
+print(1)
 #for ele in body.iter(tag=PREFIX+'p'):
 #    print(get_ptext(ele))
