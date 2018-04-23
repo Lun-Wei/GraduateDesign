@@ -303,7 +303,7 @@ def assign_fd(pPr,d):
             if "%s%s"%(PREFIX,"firstLine") in node.keys():
                 d['paraIsIntent']=node.get(PREFIX+'firstLine')
             if "%s%s"%(PREFIX,"firstLineChars") in node.keys():
-                d['paraIsIntent']= node.get(PREFIX+'firstLineChars')
+                d['paraIsIntentC']= node.get(PREFIX+'firstLineChars')
         elif check_element_type(node,'outlineLvl'):
             d['paraGrade'] = node.get(PREFIX+'val')
 
@@ -334,6 +334,18 @@ def get_format(p,d):
     return
 
 def check_out(sC,cur_format,pIndex,p):
+    errorTypeDict = {
+        'fontCN': '中文字体',
+        'fontEN': '英文字体',
+        'fontSize': '字号',
+        'fontShape': '加粗',
+        'paraAlign': '对齐方式',
+        'paraSpace': '行间距',
+        'paraIsIntent': '首行缩进',
+        'paraFrontSpace':'段前间距',
+        "paraAfterSpace": "段后间距",
+        "paraGrade": "文本级别"
+    }
     position = ['fontCN', 'fontEN', 'fontSize', 'fontShape', 'paraGrade', 'paraAlign', 'paraSpace', 'paraFrontSpace',
                 'paraAfterSpace', 'paraIsIntent']
     # 这个字典的定义是为了避免对每个para都把规则字典里十个字段检查一遍，根据para的位置有选择有针对性的检查
@@ -372,13 +384,132 @@ def check_out(sC,cur_format,pIndex,p):
                     'reference': position}
     if sC in checkItemDct.keys():
         if sC == "abstr5":
-            return
+            for key in ['paraGrade','paraAlign','paraSpace','paraFrontSpace','paraAfterSpace','paraIsIntent']:
+                if key == "paraIsIntent":
+                    if cur_format['paraIsIntentC']!=None and cur_format['paraIsIntentC'] != '0':
+                        if tempt[sC]['paraIsIntent'] == '1'and cur_format['paraIsIntentC'] != '200':
+                            rp1.write(str(pIndex)+'_'+sC+'_'+'error_paraIsIntent1_200\n')
+                            rp.write('    '+ cur_format['paraIsIntentC'] + "段落首行缩进有误\n")
+                            if p.getparent().tag != "%s%s"%(PREFIX,"sdtContent"):
+                                comment_txt.write("Error:首行缩进\n")
+                        elif tempt[sC]['paraIsIntentC'] == '0':
+                            rp1.write(str(pIndex) + '_' + sC + '_' + 'error_paraIsIntent1_0\n')
+                            rp.write('    ' + cur_format['paraIsIntentC'] + "段落首行缩进有误\n")
+                            if p.getparent().tag != "%s%s"%(PREFIX,"sdtContent"):
+                                comment_txt.write("Error:首行缩进\n")
+                    else:
+                        if int(cur_format['paraIsIntent']) > 0 and tempt[sC]['paraIsIntent'] is '0':
+                            rp1.write(str(pIndex) + '_' + sC + '_' + 'error_paraIsIntent_' + str(20 * int(cur_format['fontSize']) * int(tempt[sC][key])) + '\n')
+                            rp.write('    ' + cur_format['paraIsIntent'] + "段落首行缩进有误\n")
+                            if p.getparent().tag != "%s%s" % (PREFIX, "sdtContent"):
+                                comment_txt.write("Error:首行缩进\n")
+                        elif int(cur_format['paraIsIntent']) < 150 and tempt[sC]['paraIsIntent'] is '1':
+                            rp1.write(str(pIndex) + '_' + sC + '_' + 'error_paraIsIntent_' + str(20 * int(cur_format['fontSize']) * int(tempt[sC][key])) + '\n')
+                            rp.write('    ' + cur_format['paraIsIntent'] + "段落首行缩进有误\n")
+                            if p.getparent().tag != "%s%s" % (PREFIX, "sdtContent"):
+                                comment_txt.write("Error:首行缩进\n")
+                else:
+                    if cur_format[key] != tempt[sC][key]:
+                        rp.write('    ' + errorTypeDict[key] + '是' + cur_format[key] + '  正确应为：' + tempt[sC][key] + '\n')
+                        if p.getparent().tag != "%s%s" % (PREFIX, "sdtContent"):
+                            comment_txt.write("Error:"+errorTypeDict[key] + '是' + cur_format[key] + ' 正确应为：' + tempt[sC][key] + '\n')
+                        rp1.write(str(pIndex) + '_' + sC + '_error_' + key + '_' + tempt[sC][key] + '\n')
+            ptext = get_ptext(p)
+            if ":" not in ptext and "：" not in ptext:
+                rp.write('    ' + 'warning: 关键词后面没有冒号！\n')
+                comment_txt.write('warning: 关键词后缺冒号\n')
+                return
+            #pat = re.compile("关键词")
+            rText = ""
+            first_part = True
+            fCN = True
+            fEN = True
+            fShape = True
+            fSize = True
+            for r in p.iter(tag=PREFIX+"r"):
+                if sC == "abstr5":
+                    for t in r.iter(tag=PREFIX+"t"):
+                        rText += t.text
+                    if not first_part:
+                        sC = "abstr6"
+                    if ":" in ptext or "：" in ptext:
+                        first_part = False
+                        rText = ""
+                if fCN:
+                    #eastAsia = ""
+                    rFonts = r.find(PREFIX+"rFonts")
+                    if rFonts != None and "%s%s"%(PREFIX,"eastAsia") in rFonts.keys():
+                        eastAsia = rFonts.get(PREFIX+"eastAsia")
+                    else:
+                        eastAsia = cur_format["fontCN"]
+                    if eastAsia != tempt[sC]["fontCN"]:
+                        fCN = False
+                        rp1.write(str(pIndex) + '_' + sC + '_' + 'error_fontCN_'+tempt[sC]["fontCN"]+'\n')
+                        rp.write("    当前段落部分中文字体有错\n")
+                        comment_txt.write("Error:中文字体有误\n")
+                if fEN:
+                    #asciiv = ""
+                    rFonts = r.find(PREFIX + "rFonts")
+                    if rFonts != None and "%s%s" % (PREFIX, "ascii") in rFonts.keys():
+                        asciiv = rFonts.get(PREFIX + "asciiv")
+                    else:
+                        asciiv = cur_format["fontEN"]
+                    if asciiv != tempt[sC]["fontEN"] and asciiv != "宋体":
+                        fEN = False
+                        rp1.write(str(pIndex) + '_' + sC + '_' + 'error_fontEN_' + tempt[sC]["fontEN"] + '\n')
+                        rp.write("    当前段落部分英文字体有错\n")
+                        comment_txt.write("Error:英文字体有误\n")
+                if fShape:
+                    #rfShape = ""
+                    rb = r.find(PREFIX+"b")
+                    if rb != None:
+                        if "%s%s"%(PREFIX,"val") in rb.keys() and rb.get(PREFIX+"val") == '0':
+                            rfShape = '0'
+                        else:
+                            rfShape = "1"
+                    else:
+                        rfShape = cur_format["fontShape"]
+                    if rfShape != tempt[sC]["fontShape"]:
+                        fShape = False
+                        rp1.write(str(pIndex) + '_' + sC + '_' + 'error_fontShape_' + tempt[sC]["fontShape"] + '\n')
+                        rp.write("    当前段落部分字体加粗有错\n")
+                        comment_txt.write("Error:加粗有误\n")
+                if fSize:
+                    #rfSize = ""
+                    rsize = r.find(PREFIX+"sz")
+                    if rsize != None:
+                        rfSize = rsize.get(PREFIX+"val")
+                    else:
+                        rfSize = cur_format["fontSize"]
+                    if rfSize != tempt[sC]["fontSize"]:
+                        fSize = False
+                        rp1.write(str(pIndex) + '_' + sC + '_' + 'error_fontSize_0\n')
+                        rp.write("    当前段落部分字体大小有误\n")
+                        comment_txt.write("Error:字体大小有误\n")
+        else:
+            for key in checkItemDct[sC]:
+                if key == "paraIsIntent":
+                    return
+                elif key == "fontSize" or key == "fontShape":
+                    return
+                elif key == "fontCN" or key == "fontEN":
+                    return
+                else:
+                    if cur_format[key] != tempt[sC][key]:
+                        rp.write('    ' + errorTypeDict[key] + '是' + cur_format[key] + '  正确应为：' + tempt[sC][key] + '\n')
+                        if p.getparent().tag != "%s%s" % (PREFIX, "sdtContent"):
+                            comment_txt.write("Error:" + errorTypeDict[key] + '是' + cur_format[key])
+                        rp1.write(str(pIndex) + '_' + sC + '_error_' + key + '_' + tempt[sC][key] + '\n')
     return
 
+
+rp = open("check_out.txt","w")
+rp1 = open("check_out1.txt","w")
+comment_txt = open("comment.txt","w")
 pIndex = 0
 bigCat = {}
 sCat = {}
-p_format = {}.fromkeys(["fontCN","fontEN","fontSize","fontShape","paraAlign","paraSpace","paraIsIntent","paraFrontSpace","paraAfterSpace","paraGrade","leftChars","left"])
+p_format = {}.fromkeys(["fontCN","fontEN","fontSize","fontShape","paraAlign","paraSpace","paraIsIntent","paraIsIntentC","paraFrontSpace","paraAfterSpace","paraGrade","leftChars","left"])
 get_default(p_format)
 print(p_format)
 #print(doct.find("b"))
